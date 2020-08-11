@@ -1,5 +1,5 @@
 import sys, json
-from settings import PID_CREDS, DATA_NODE, PID_PREFIX, PID_EXCHANGE, URL_Templates, HTTP_SERVICE, CITATION_URLS, PID_URL, TEST_PUB
+from esgcet.settings import PID_CREDS, DATA_NODE, PID_PREFIX, PID_EXCHANGE, URL_Templates, HTTP_SERVICE, CITATION_URLS, PID_URL, TEST_PUB
 import traceback
 
 def establish_pid_connection(pid_prefix, test_publication,  publish=True):
@@ -167,6 +167,7 @@ def main(args):
 #    print("after finish") DEBUG
 
 if __name__ == '__main__':
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file))))
     main(sys.argv[1:])
 
 

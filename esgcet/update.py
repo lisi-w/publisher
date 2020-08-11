@@ -1,7 +1,7 @@
-from pub_client import publisherClient
+from esgcet.pub_client import publisherClient
 import sys, json, requests
-from settings import INDEX_NODE, CERT_FN
-import args
+from esgcet.settings import INDEX_NODE, CERT_FN
+import esgcet.args
 from datetime import datetime
 
 hostname = INDEX_NODE

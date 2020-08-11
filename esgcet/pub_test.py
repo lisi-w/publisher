@@ -1,7 +1,7 @@
-from pub_client import publisherClient
+from esgcet.pub_client import publisherClient
 
-import list2json, sys, json
-from settings import INDEX_NODE, CERT_FN
+import esgcet.list2json, sys, json
+from esgcet.settings import INDEX_NODE, CERT_FN
 
 
 def main(outdata):
@@ -18,7 +18,7 @@ def main(outdata):
 
     for rec in d:
 
-        new_xml = list2json.gen_xml(rec)
+        new_xml = esgcet.list2json.gen_xml(rec)
         print(new_xml)
         pubCli.publish(new_xml)
 #        print(new_xml)

@@ -33,8 +33,8 @@ setup(
     # Install the CF standard name table, ESG init file, etc.
     scripts = [
     ],
-    entry_points = {'console_scripts': ['esgpidcitepub=esgcet.pid_cite_pub:main']},
     zip_safe = False,                   # Migration repository must be a directory
+    entry_points={'console_scripts': ['esgpidcitepub=esgcet.pid_cite_pub:main']},
 )
 
 
