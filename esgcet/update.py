@@ -1,11 +1,8 @@
 from esgcet.pub_client import publisherClient
 import sys, json, requests
 from esgcet.settings import INDEX_NODE, CERT_FN
-import esgcet.args
+import configparser as cfg
 from datetime import datetime
-
-hostname = INDEX_NODE
-cert_fn = CERT_FN
 
 ARGS = 1
 
@@ -33,13 +30,37 @@ def gen_hide_xml(id, *args):
 
     return txt
 
-def main(outdata):
+def run(args):
 
+    if len(args) < 1:
+        print("usage: esgupdate <JSON file with dataset output>")
+        exit(1)
     try:
-        input_rec = outdata
+        if isinstance(args, list):
+            input_rec = json.load(open(args[0]))
+        else:
+            input_rec = args[0]
     except Exception as e:
         print("Error opening input json format {}".format(e))
         exit(1)
+    config = cfg.ConfigParser()
+    config.read('esg.ini')
+    if len(args) == 3:
+        index_node = args[1]
+        cert_fn = args[2]
+    else:
+        try:
+            index_node = config['user']['index_node']
+        except:
+            print("Index node not defined. Define in esg.ini.")
+            exit(1)
+
+        try:
+            cert_fn = config['user']['cert']
+        except:
+            print("Certificate file not found. Define in esg.ini.")
+            exit(1)
+
     # The dataset record either first or last in the input file
     dset_idx = -1
     if not input_rec[dset_idx]['type'] == 'Dataset':
@@ -53,7 +74,7 @@ def main(outdata):
     dnode = input_rec[dset_idx]['data_node']
 
     # query for 
-    url = SEARCH_TEMPLATE.format(INDEX_NODE, dnode, mst)
+    url = SEARCH_TEMPLATE.format(index_node, dnode, mst)
 
     print(url)
     resp = requests.get(url)
@@ -69,7 +90,7 @@ def main(outdata):
         docs = res['response']["docs"]
         dsetid = docs[0]['id']
         update_rec = gen_hide_xml( dsetid )
-        pubCli = publisherClient(cert_fn, hostname)
+        pubCli = publisherClient(cert_fn, index_node)
         print (update_rec)
         pubCli.update(update_rec)
         print('INFO: Found previous version, updating the record: {}'.format(dsetid))
@@ -77,3 +98,11 @@ def main(outdata):
     else:
         print('INFO: First dataset version for {}.'.format(mst))
 
+
+def main():
+    run(sys.argv[1:])
+
+
+if __name__ == '__main__':
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+    main()

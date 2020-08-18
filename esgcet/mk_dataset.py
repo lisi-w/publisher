@@ -1,11 +1,13 @@
 import sys, json
 from esgcet.mapfile import *
+import configparser as cfg
 
 from datetime import datetime, timedelta
 
 from esgcet.settings import *
 
-
+config = cfg.ConfigParser()
+config.read('esg.ini')
 
 EXCLUDES = [""]
 
@@ -21,12 +23,7 @@ def unpack_values(invals):
             yield x['values']
 
 
-def get_dataset(mapdata, scandata):
-
-    if DATA_NODE == "":
-        raise BaseException("Missing data node!")
-    if INDEX_NODE == "":
-        raise BaseException("Missing index node!")
+def get_dataset(mapdata, scandata, data_node, index_node, replica):
 
     master_id, version = mapdata.split('#')
 
@@ -64,8 +61,8 @@ def get_dataset(mapdata, scandata):
         for facetkey in CONST_ATTR[projkey]:
             d[facetkey] = CONST_ATTR[projkey][facetkey]
 
-    d['data_node'] = DATA_NODE
-    d['index_node'] = INDEX_NODE
+    d['data_node'] = data_node
+    d['index_node'] = index_node
     DRSlen = len(DRS[projkey])
     d['master_id'] = master_id
     d['instance_id'] = master_id + '.v' + version
@@ -73,7 +70,7 @@ def get_dataset(mapdata, scandata):
     if 'title' in d:
         d['short_description'] = d['title']
     d['title'] = d['master_id']
-    d['replica'] = True
+    d['replica'] = replica
     d['latest'] = 'true'
     d['type'] = 'Dataset'
     d['project'] = projkey
@@ -89,11 +86,34 @@ def get_dataset(mapdata, scandata):
 
 def format_template(template, root, rel):
     if "Globus" in template:
-        return template.format(GLOBUS_UUID, root, rel)
+        try:
+            globus = config['user']['globus_uuid']
+            if globus != 'none':
+                return template.format(globus, root, rel)
+            else:
+                print("INFO: no Globus UUID defined. Using default: " + GLOBUS_UUID, file=sys.stderr)
+                return template.format(GLOBUS_UUID, root, rel)
+        except:
+            print("INFO: no Globus UUID defined. Using default: " + GLOBUS_UUID, file=sys.stderr)
+            return template.format(GLOBUS_UUID, root, rel)
     elif "gsiftp" in template:
-        return template.format(DATA_TRANSFER_NODE, root, rel)
+        try:
+            dtn = config['user']['data_transfer_node']
+            if dtn != 'none':
+                return template.format(dtn, root, rel)
+            else:
+                print("INFO: no data transfer node defined. Using default: " + DATA_TRANSFER_NODE, file=sys.stderr)
+                return template.format(DATA_TRANSFER_NODE, root, rel)
+        except:
+            print("INFO: no data transfer node defined. Using default: " + DATA_TRANSFER_NODE, file=sys.stderr)
+            return template.format(DATA_TRANSFER_NODE, root, rel)
     else:
-        return template.format(DATA_NODE, root, rel)
+        try:
+            data_node = config['user']['data_node']
+        except:
+            print("Data node not defined. Define in esg.ini.")
+            exit(1)
+        return template.format(data_node, root, rel)
 
 
 def gen_urls(proj_root, rel_path):
@@ -120,11 +140,19 @@ def get_file(dataset_rec, mapdata, fn_trid):
 
     rel_path, proj_root = normalize_path(fullfn, dataset_rec["project"])
 
-    if not proj_root in DATA_ROOTS:
+    try:
+        data_roots = json.loads(config['user']['data_roots'])
+        if data_roots == 'none':
+            print("Data roots undefined. Define in esg.ini to create file metadata.")
+            exit(1)
+    except:
+        print("Data roots undefined. Define in esg.ini to create file metadata.")
+        exit(1)
+    if not proj_root in data_roots:
         eprint('Error:  The file system root {} not found.  Please check your configuration.'.format(proj_root))
         exit(1)
 
-    ret["url"] = gen_urls(DATA_ROOTS[proj_root], rel_path)
+    ret["url"] = gen_urls(data_roots[proj_root], rel_path)
     if "number_of_files" in ret:
         ret.pop("number_of_files")
     else:
@@ -152,7 +180,7 @@ def update_metadata(record, scanobj):
             vid = record["variable_id"]
             var_rec = scanobj["variables"][vid]
             if "long_name" in var_rec.keys():
-            	record["variable_long_name"] = var_rec["long_name"]
+                record["variable_long_name"] = var_rec["long_name"]
             record["cf_standard_name"] = var_rec["standard_name"]
             record["variable_units"] = var_rec["units"]
             record["variable"] = vid
@@ -241,12 +269,15 @@ def iterate_files(dataset_rec, mapdata, scandata):
 
     return ret, sz, access
 
-def get_records(mapdata, scanfilename, xattrfn=None):
+def get_records(mapdata, scanfilename, data_node, index_node, replica, xattrfn=None):
 
-    mapobj = mapdata
+    if isinstance(mapdata, str):
+        mapobj = json.load(open(mapdata))
+    else:
+        mapobj = mapdata
     scanobj = json.load(open(scanfilename))
 
-    rec = get_dataset(mapobj[0][0], scanobj['dataset'])
+    rec = get_dataset(mapobj[0][0], scanobj['dataset'], data_node, index_node, replica)
     update_metadata(rec, scanobj)
     rec["number_of_files"] = len(mapobj)  # place this better
 
@@ -280,13 +311,57 @@ def get_records(mapdata, scanfilename, xattrfn=None):
     return ret
 
 
-def main(args):
+def run(args):
     if (len(args) < 2):
-        print("Missing required arguments!")
+        print("usage: esgmkpubrec <JSON file with map data> <scan file>")
         exit(0)
-
-    if len(args) > 2:
-        ret = get_records(args[0], args[1], xattrfn=args[2])
+    p = False
+    if len(args) >= 5 and args[3] != '>':
+        data_node = args[2]
+        index_node = args[3]
+        r = args[4]
+        if 'true' in r or 'yes' in r:
+             replica = True
+        elif 'false' in r or 'no' in r:
+             replica = False
+        else:
+             print("Invalid replica: must be type bool.")
+             exit(1)
     else:
-        ret = get_records(args[0], args[1])
+        p = True
+        try:
+            data_node = config['user']['data_node']
+        except:
+            print("Data node not defined. Define in esg.ini.")
+            exit(1)
+
+        try:
+            index_node = config['user']['index_node']
+        except:
+            print("Index node not defined. Define in esg.ini.")
+            exit(1)
+
+        try:
+            r = config['user']['set_replica']
+            if 'true' in r or 'yes' in r:
+                replica = True
+            else:
+                replica = False
+        except:
+            print("Replica not defined. Define in esg.ini")
+            exit(1)
+
+    if len(args) > 5:
+        ret = get_records(args[0], args[1], data_node, index_node, replica, xattrfn=args[5])
+    else:
+        ret = get_records(args[0], args[1], data_node, index_node, replica)
+    if p:
+        print(json.dumps(ret))
     return ret
+
+def main():
+    run(sys.argv[1:])
+
+if __name__ == '__main__':
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+    main()

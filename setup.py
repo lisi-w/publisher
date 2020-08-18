@@ -6,12 +6,16 @@ except ImportError:
     from ez_setup import use_setuptools
     use_setuptools()
     from setuptools import setup, find_packages
-
+from pathlib import Path
+from os import mkdir
 
 
 
 VERSION = '5.0.0a'
 print("esgcet version =", VERSION)
+HOME = str(Path.home())
+FULLPATH = HOME + '/.esg'
+mkdir(FULLPATH)
 
 setup(
     name = 'esgcet',
@@ -34,7 +38,13 @@ setup(
     scripts = [
     ],
     zip_safe = False,                   # Migration repository must be a directory
-    entry_points={'console_scripts': ['esgpidcitepub=esgcet.pid_cite_pub:main']},
+    entry_points={'console_scripts': ['esgpidcitepub=esgcet.pid_cite_pub:main',
+                                      'esgmkpubrec=esgcet.mk_dataset:main',
+                                      'esgindexpub=esgcet.index_pub:main',
+                                      'esgpublish=esgcet.pub_internal:main',
+                                      'esgupdate=esgcet.update:main',
+                                      'esgmapconv=esgcet.mapfile:main']},
+    data_files=[(FULLPATH, ['esg.ini'])] 
 )
 
 

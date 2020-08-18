@@ -1,8 +1,10 @@
 import sys, json
 from esgcet.settings import PID_CREDS, DATA_NODE, PID_PREFIX, PID_EXCHANGE, URL_Templates, HTTP_SERVICE, CITATION_URLS, PID_URL, TEST_PUB
 import traceback
+import configparser as cfg
 
-def establish_pid_connection(pid_prefix, test_publication,  publish=True):
+
+def establish_pid_connection(pid_prefix, test_publication, data_node, publish=True):
 
     """Establish a connection to the PID service
     pid_prefix
@@ -19,7 +21,7 @@ def establish_pid_connection(pid_prefix, test_publication,  publish=True):
 
     pid_messaging_service_exchange_name = PID_EXCHANGE
     pid_messaging_service_credentials = PID_CREDS
-    pid_data_node = DATA_NODE
+    pid_data_node = data_node
 
     # http_service_path = None
 
@@ -38,7 +40,7 @@ def establish_pid_connection(pid_prefix, test_publication,  publish=True):
     return pid_connector
 
 
-def check_pid_connection(pid_prefix, pid_connector, send_message=False):
+def check_pid_connection(pid_prefix, pid_connector, data_node, send_message=False):
     """
     Check the connection to the PID rabbit MQ
     Raise an Error if connection fails
@@ -47,7 +49,7 @@ def check_pid_connection(pid_prefix, pid_connector, send_message=False):
     if pid_queue_return_msg is not None:
         raise Exception("Unable to establish connection to PID Messaging Service. Please check your esg.ini for correct pid_credentials.")
 
-    pid_connector = establish_pid_connection(pid_prefix, TEST_PUB,  publish=True)
+    pid_connector = establish_pid_connection(pid_prefix, TEST_PUB, data_node, publish=True)
 
 
 
@@ -55,7 +57,7 @@ def get_url(arr):
 
     return arr[0].split('|')[0]
 
-def pid_flow_code(dataset_recs):
+def pid_flow_code(dataset_recs, data_node):
 
 
     try:
@@ -67,20 +69,20 @@ def pid_flow_code(dataset_recs):
     version_number = dsrec['version']
     is_replica = dsrec["replica"]
 
-    pid_connector = establish_pid_connection(PID_PREFIX, TEST_PUB, publish=False)
+    pid_connector = establish_pid_connection(PID_PREFIX, TEST_PUB, data_node, publish=False)
     pid_connector.start_messaging_thread()
 
     dataset_pid = None
     if pid_connector:
         dataset_pid = pid_connector.make_handle_from_drsid_and_versionnumber(drs_id=dset, version_number=version_number)
-        print("Assigned PID to dataset %s.v%s: %s " % (dset, version_number, dataset_pid))
+        print("Assigned PID to dataset %s.v%s: %s " % (dset, version_number, dataset_pid), file=sys.stderr)
     else:
         print('warning no connection')
     # if project uses citation, build citation url
 
 
     try:
-        check_pid_connection(PID_PREFIX, pid_connector, send_message=True)
+        check_pid_connection(PID_PREFIX, pid_connector, data_node, send_message=True)
 
         pid_wizard = None
             # Check connection
@@ -111,10 +113,10 @@ def pid_flow_code(dataset_recs):
             pid_wizard.dataset_publication_finished()
             return pid_connector, dataset_pid
         else:
-            print("WARNING, empty pid_wizard!")
+            print("WARNING, empty pid_wizard!", file=sys.stderr)
 
     except Exception as e:
-        print("WARNING: PID module exception encountered! {}".format(str(e)))
+        print("WARNING: PID module exception encountered! {}".format(str(e)), file=sys.stderr)
         traceback.print_exc()
 
     pid_connector.force_finish_messaging_thread()
@@ -144,10 +146,31 @@ def rewrite_json(fname, recs):
     with open(fname, 'w') as f:
         f.write(json.dumps(recs, indent=1))
 
-def main(args):
+def run(args):
 
-    res = args
-    pid_connector, pid = pid_flow_code(res)
+    if len(args) < 1:
+        print("usage: esgpidcitepub <JSON file with dataset output>", file=sys.stderr)
+        exit(1)
+
+    config = cfg.ConfigParser()
+    config.read('esg.ini')
+    p = False
+    if len(args) == 2:
+        data_node = args[1]
+    else:
+        p = True
+        try:
+            data_node = config['user']['data_node']
+        except:
+            print("Data node not defined. Define in esg.ini.", file=sys.stderr)
+            exit(1)
+
+    if isinstance(args[0], str):
+        res = json.load(open(args[0]))
+    else:
+        res = args[0]
+
+    pid_connector, pid = pid_flow_code(res, data_node)
 
     if pid_connector is None:
         exit(-1)
@@ -157,18 +180,23 @@ def main(args):
             res[i] = update_dataset(res[i], pid, TEST_PUB)
 
     except Exception as e:
-        print("WARNING: Some exception encountered! {}".format(str(e)))
+        print("WARNING: Some exception encountered! {}".format(str(e)), file=sys.stderr)
         pid_connector.force_finish_messaging_thread()
         exit(-1)
 
-#    print("before finish"). DEBUG
     pid_connector.finish_messaging_thread()
+    if p:
+        print(json.dumps(res))
     return res
-#    print("after finish") DEBUG
+
+
+def main():
+    run(sys.argv[1:])
+
 
 if __name__ == '__main__':
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file))))
-    main(sys.argv[1:])
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+    main()
 
 
 #    "xlink":["http://cera-www.dkrz.de/WDCC/meta/CMIP6/CMIP6.RFMIP.MOHC.HadGEM3-GC31-LL.rad-irf.r1i1p3f3.Efx.rld.gn.v20191030.json|Citation|citation",
